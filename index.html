@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiniWorld Sim</title>
+    <style>
+        body { margin: 0; background: #f0f0f0; font-family: Arial, sans-serif; }
+        #game-container { position: relative; display: inline-block; }
+        canvas { border: 1px solid #000; background: #fff; }
+        #ui { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 5px; }
+        button { margin: 5px; padding: 5px 10px; cursor: pointer; }
+        select { margin: 5px; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="canvas" width="800" height="600"></canvas>
+        <div id="ui">
+            <select id="tool-select">
+                <option value="human">Place Human</option>
+                <option value="elf">Place Elf</option>
+                <option value="orc">Place Orc</option>
+                <option value="fire">Start Fire</option>
+                <option value="rain">Cause Rain</option>
+                <option value="lightning">Strike Lightning</option>
+                <option value="destroy">Destroy</option>
+            </select>
+            <button id="play-pause">Pause</button>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const TILE_SIZE = 10;
+        const GRID_WIDTH = canvas.width / TILE_SIZE;
+        const GRID_HEIGHT = canvas.height / TILE_SIZE;
+
+        // Terrain types
+        const TERRAIN = {
+            GRASS: { color: '#4CAF50', flammable: true },
+            WATER: { color: '#2196F3', flammable: false },
+            MOUNTAIN: { color: '#9E9E9E', flammable: false }
+        };
+
+        // Creature types
+        const CREATURE_TYPES = {
+            HUMAN: { color: '#FFEB3B', enemy: 'ORC' },
+            ELF: { color: '#8BC34A', enemy: 'ORC' },
+            ORC: { color: '#F44336', enemy: 'HUMAN' }  // Simplified enmity
+        };
+
+        class World {
+            constructor() {
+                this.grid = this.generateRandomGrid();
+                this.creatures = [];
+                this.events = [];  // For fire, rain, lightning
+                this.isPaused = false;
+            }
+
+            generateRandomGrid() {
+                const grid = Array.from({ length: GRID_HEIGHT }, () => Array(GRID_WIDTH).fill(null));
+                for (let y = 0; y < GRID_HEIGHT; y++) {
+                    for (let x = 0; x < GRID_WIDTH; x++) {
+                        const rand = Math.random();
+                        if (rand < 0.2) grid[y][x] = TERRAIN.WATER;
+                        else if (rand < 0.4) grid[y][x] = TERRAIN.MOUNTAIN;
+                        else grid[y][x] = TERRAIN.GRASS;
+                    }
+                }
+                return grid;
+            }
+
+            update() {
+                if (this.isPaused) return;
+                this.updateCreatures();
+                this.updateEvents();
+            }
+
+            updateCreatures() {
+                this.creatures = this.creatures.filter(c => c.age < 100);  // Die of old age
+                this.creatures.forEach(c => {
+                    c.age++;
+                    // Random walk
+                    const dx = Math.floor(Math.random() * 3) - 1;
+                    const dy = Math.floor(Math.random() * 3) - 1;
+                    const nx = Math.min(Math.max(c.x + dx, 0), GRID_WIDTH - 1);
+                    const ny = Math.min(Math.max(c.y + dy, 0), GRID_HEIGHT - 1);
+                    if (this.grid[ny][nx] !== TERRAIN.WATER) {
+                        c.x = nx;
+                        c.y = ny;
+                    }
+
+                    // Fight if enemy nearby
+                    this.creatures.forEach(other => {
+                        if (other !== c && Math.abs(c.x - other.x) <= 1 && Math.abs(c.y - other.y) <= 1 &&
+                            CREATURE_TYPES[c.type].enemy === other.type) {
+                            if (Math.random() < 0.5) other.age = 100;  // Kill other
+                        }
+                    });
+
+                    // Build (simplified: change grass to mountain as 'building')
+                    if (Math.random() < 0.01 && this.grid[c.y][c.x] === TERRAIN.GRASS) {
+                        this.grid[c.y][c.x] = TERRAIN.MOUNTAIN;
+                    }
+                });
+            }
+
+            updateEvents() {
+                const newEvents = [];
+                this.events.forEach(e => {
+                    if (e.type === 'fire') {
+                        if (Math.random() < 0.5) e.duration--;
+                        if (e.duration > 0) {
+                            newEvents.push(e);
+                            // Spread to adjacent flammable tiles
+                            const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+                            dirs.forEach(d => {
+                                const nx = e.x + d[0], ny = e.y + d[1];
+                                if (nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT &&
+                                    this.grid[ny][nx]?.flammable && Math.random() < 0.3) {
+                                    newEvents.push({ type: 'fire', x: nx, y: ny, duration: 10 });
+                                }
+                            });
+                        }
+                    } else if (e.type === 'rain') {
+                        // Extinguish fires in area
+                        this.events = this.events.filter(ev => !(ev.type === 'fire' && Math.abs(ev.x - e.x) < 5 && Math.abs(ev.y - e.y) < 5));
+                        e.duration--;
+                        if (e.duration > 0) newEvents.push(e);
+                    } else if (e.type === 'lightning') {
+                        // Strike: damage creatures or start fire
+                        this.creatures = this.creatures.filter(c => !(Math.abs(c.x - e.x) < 2 && Math.abs(c.y - e.y) < 2));
+                        if (this.grid[e.y][e.x]?.flammable) newEvents.push({ type: 'fire', x: e.x, y: e.y, duration: 10 });
+                    }
+                });
+                this.events = newEvents;
+            }
+
+            draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                for (let y = 0; y < GRID_HEIGHT; y++) {
+                    for (let x = 0; x < GRID_WIDTH; x++) {
+                        if (this.grid[y][x]) {
+                            ctx.fillStyle = this.grid[y][x].color;
+                            ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                        }
+                    }
+                }
+                this.creatures.forEach(c => {
+                    ctx.fillStyle = CREATURE_TYPES[c.type].color;
+                    ctx.fillRect(c.x * TILE_SIZE + 2, c.y * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                });
+                this.events.forEach(e => {
+                    if (e.type === 'fire') ctx.fillStyle = 'rgba(255,0,0,0.5)';
+                    else if (e.type === 'rain') ctx.fillStyle = 'rgba(0,0,255,0.3)';
+                    else if (e.type === 'lightning') ctx.fillStyle = 'rgba(255,255,0,0.7)';
+                    ctx.fillRect(e.x * TILE_SIZE, e.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                });
+            }
+
+            handleClick(x, y, tool) {
+                const gx = Math.floor(x / TILE_SIZE);
+                const gy = Math.floor(y / TILE_SIZE);
+                if (tool in CREATURE_TYPES) {
+                    this.creatures.push({ type: tool.toUpperCase(), x: gx, y: gy, age: 0 });
+                } else if (tool === 'fire') {
+                    this.events.push({ type: 'fire', x: gx, y: gy, duration: 10 });
+                } else if (tool === 'rain') {
+                    this.events.push({ type: 'rain', x: gx, y: gy, duration: 5 });
+                } else if (tool === 'lightning') {
+                    this.events.push({ type: 'lightning', x: gx, y: gy });
+                } else if (tool === 'destroy') {
+                    this.grid[gy][gx] = null;
+                    this.creatures = this.creatures.filter(c => c.x !== gx || c.y !== gy);
+                    this.events = this.events.filter(e => e.x !== gx || e.y !== gy);
+                }
+            }
+        }
+
+        const world = new World();
+
+        // UI
+        const toolSelect = document.getElementById('tool-select');
+        const playPauseBtn = document.getElementById('play-pause');
+        playPauseBtn.addEventListener('click', () => {
+            world.isPaused = !world.isPaused;
+            playPauseBtn.textContent = world.isPaused ? 'Play' : 'Pause';
+        });
+
+        // Mouse interaction
+        canvas.addEventListener('click', e => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            world.handleClick(x, y, toolSelect.value);
+        });
+
+        // Game loop
+        function gameLoop() {
+            world.update();
+            world.draw();
+            requestAnimationFrame(gameLoop);
+        }
+        gameLoop();
+    </script>
+</body>
+</html>
+Save this as <mcfile name="index.html" path="c:\Users\tarno\Downloads\conway life\index.html"></mcfile>.
