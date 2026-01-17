@@ -1,31 +1,499 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Puter AI Chat</title>
-</head>
-<body>
-  <h2>Puter AI Chat</h2>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Puter.js AI Demo: Chat • Summarize • Image→Text</title>
 
-  <input id="prompt" placeholder="Type a message..." style="width:300px;">
-  <button onclick="send()">Send</button>
-
-  <pre id="output"></pre>
-
+  <!-- Puter.js (official) -->
   <script src="https://js.puter.com/v2/"></script>
-  <script>
-    async function send() {
-      const prompt = document.getElementById("prompt").value;
-      const output = document.getElementById("output");
 
-      output.textContent = "Thinking...";
-
-      const response = await puter.ai.chat(prompt);
-
-      // ✅ THIS is the actual text
-      output.textContent = response.message.content;
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 20px; }
+    header { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    h1 { font-size: 18px; margin: 0; }
+    .pill { font-size: 12px; opacity:.8; }
+    .tabs { display:flex; gap:8px; margin: 16px 0; flex-wrap:wrap; }
+    .tabbtn {
+      border: 1px solid rgba(127,127,127,.35);
+      padding: 8px 12px;
+      border-radius: 10px;
+      background: transparent;
+      cursor: pointer;
     }
+    .tabbtn[aria-selected="true"] { background: rgba(127,127,127,.15); }
+    .panel {
+      border: 1px solid rgba(127,127,127,.25);
+      border-radius: 14px;
+      padding: 14px;
+      display:none;
+    }
+    .panel.active { display:block; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    label { font-size: 13px; opacity: .9; }
+    input[type="text"], textarea, select {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid rgba(127,127,127,.35);
+      padding: 10px 12px;
+      background: transparent;
+      outline: none;
+    }
+    textarea { min-height: 120px; resize: vertical; }
+    button.primary {
+      border: 1px solid rgba(127,127,127,.35);
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      background: rgba(127,127,127,.12);
+    }
+    button.primary:disabled { opacity:.6; cursor:not-allowed; }
+    .two { display:grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 860px) { .two { grid-template-columns: 1fr 1fr; } }
+    .chatlog {
+      height: 340px;
+      overflow:auto;
+      border-radius: 12px;
+      border: 1px solid rgba(127,127,127,.25);
+      padding: 10px;
+      background: rgba(127,127,127,.06);
+    }
+    .msg { margin: 10px 0; padding: 10px; border-radius: 12px; border: 1px solid rgba(127,127,127,.22); }
+    .msg .role { font-size: 12px; opacity:.75; margin-bottom: 6px; }
+    .msg.user { background: rgba(60,140,255,.08); }
+    .msg.ai { background: rgba(80,200,120,.08); }
+    .hint { font-size: 12px; opacity: .8; line-height: 1.4; }
+    .status { font-size: 12px; opacity:.85; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .preview {
+      border-radius: 12px;
+      border: 1px dashed rgba(127,127,127,.35);
+      padding: 10px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height: 220px;
+      background: rgba(127,127,127,.04);
+    }
+    img { max-width: 100%; max-height: 360px; border-radius: 10px; }
+    .footer { margin-top: 14px; font-size: 12px; opacity: .75; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Puter.js AI Demo</h1>
+        <div class="pill">Chat • Summarize • Image→Text (OCR)</div>
+      </div>
+
+      <div class="row" style="gap:10px;">
+        <div class="status" id="authStatus">Auth: …</div>
+        <button class="primary" id="btnSignIn">Sign in</button>
+        <button class="primary" id="btnSignOut">Sign out</button>
+      </div>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="Puter AI Demo Tabs">
+      <button class="tabbtn" role="tab" aria-selected="true" data-tab="chat">Chat AI</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="summarize">Text Summarizer</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="ocr">Image → Text (OCR)</button>
+    </div>
+
+    <!-- CHAT -->
+    <section class="panel active" id="tab-chat" role="tabpanel">
+      <div class="two">
+        <div>
+          <div class="row">
+            <div style="flex:2; min-width: 220px;">
+              <label for="chatModel">Model (Puter supports many; you can type any model id)</label>
+              <input id="chatModel" type="text" list="modelSuggestions" value="gpt-5-nano" />
+              <datalist id="modelSuggestions">
+                <option value="gpt-5-nano"></option>
+                <option value="gpt-5-mini"></option>
+                <option value="gpt-4.1-mini"></option>
+                <option value="anthropic/claude-3.5-sonnet"></option>
+                <option value="google/gemini-2.0-flash"></option>
+                <option value="x-ai/grok-2"></option>
+                <option value="deepseek/deepseek-chat"></option>
+              </datalist>
+            </div>
+
+            <div style="flex:1; min-width: 180px;">
+              <label for="chatTemp">Temperature</label>
+              <select id="chatTemp">
+                <option value="0.2">0.2 (focused)</option>
+                <option value="0.7" selected>0.7 (balanced)</option>
+                <option value="1.2">1.2 (creative)</option>
+              </select>
+            </div>
+
+            <div style="flex:1; min-width: 180px;">
+              <label for="chatVerbosity">Verbosity</label>
+              <select id="chatVerbosity">
+                <option value="low">low</option>
+                <option value="medium" selected>medium</option>
+                <option value="high">high</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="chatlog" id="chatLog" aria-label="Chat log"></div>
+
+          <div class="row" style="margin-top:10px;">
+            <div style="flex: 1; min-width: 240px;">
+              <input id="chatInput" type="text" placeholder="Type a message and press Enter…" />
+            </div>
+            <button class="primary" id="chatSend">Send</button>
+            <button class="primary" id="chatClear">Clear</button>
+          </div>
+
+          <div class="hint" style="margin-top:10px;">
+            This uses <span class="mono">puter.ai.chat()</span> with streaming enabled.
+            If you’re not signed in, Puter can auto-prompt for auth when the AI call runs.
+          </div>
+        </div>
+
+        <div>
+          <label>Debug / Output</label>
+          <textarea id="chatDebug" class="mono" readonly style="min-height: 420px;"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUMMARIZER -->
+    <section class="panel" id="tab-summarize" role="tabpanel">
+      <div class="row">
+        <div style="flex:2; min-width: 280px;">
+          <label for="sumInput">Paste text to summarize</label>
+          <textarea id="sumInput" placeholder="Paste a long article, notes, transcript, etc…"></textarea>
+        </div>
+        <div style="flex:1; min-width: 240px;">
+          <label for="sumStyle">Summary style</label>
+          <select id="sumStyle">
+            <option value="bullet">Bullets</option>
+            <option value="tldr" selected>TL;DR + key points</option>
+            <option value="action">Action items</option>
+            <option value="outline">Outline</option>
+          </select>
+
+          <label for="sumLength" style="display:block; margin-top:10px;">Length</label>
+          <select id="sumLength">
+            <option value="short">Short</option>
+            <option value="medium" selected>Medium</option>
+            <option value="long">Long</option>
+          </select>
+
+          <label for="sumModel" style="display:block; margin-top:10px;">Model</label>
+          <input id="sumModel" type="text" value="gpt-5-nano" />
+
+          <button class="primary" id="sumRun" style="margin-top:12px; width:100%;">Summarize</button>
+          <button class="primary" id="sumClear" style="margin-top:8px; width:100%;">Clear</button>
+
+          <div class="hint" style="margin-top:10px;">
+            Summarization is just a specialized prompt to <span class="mono">puter.ai.chat()</span>.
+          </div>
+        </div>
+      </div>
+
+      <label style="display:block; margin-top:12px;">Summary</label>
+      <textarea id="sumOut" readonly></textarea>
+    </section>
+
+    <!-- OCR -->
+    <section class="panel" id="tab-ocr" role="tabpanel">
+      <div class="row">
+        <div style="flex:1; min-width: 260px;">
+          <label for="ocrFile">Upload an image with text</label>
+          <input id="ocrFile" type="file" accept="image/*" />
+          <div class="hint" style="margin-top:8px;">
+            Uses <span class="mono">puter.ai.img2txt(file)</span> for OCR.
+          </div>
+
+          <button class="primary" id="ocrRun" style="margin-top:12px; width:100%;">Extract Text</button>
+          <button class="primary" id="ocrClear" style="margin-top:8px; width:100%;">Clear</button>
+        </div>
+
+        <div style="flex:2; min-width: 320px;">
+          <label>Preview</label>
+          <div class="preview" id="ocrPreview">No image selected</div>
+        </div>
+      </div>
+
+      <label style="display:block; margin-top:12px;">Extracted Text</label>
+      <textarea id="ocrOut" readonly></textarea>
+    </section>
+
+    <div class="footer">
+      Tip: This is perfect for GitHub Pages — just commit as <span class="mono">index.html</span>.
+    </div>
+  </div>
+
+  <script>
+    // ---------- Tabs ----------
+    const tabButtons = Array.from(document.querySelectorAll('.tabbtn'));
+    const panels = {
+      chat: document.getElementById('tab-chat'),
+      summarize: document.getElementById('tab-summarize'),
+      ocr: document.getElementById('tab-ocr'),
+    };
+
+    function setTab(name) {
+      for (const btn of tabButtons) {
+        const isActive = btn.dataset.tab === name;
+        btn.setAttribute('aria-selected', String(isActive));
+      }
+      for (const [k, el] of Object.entries(panels)) {
+        el.classList.toggle('active', k === name);
+      }
+    }
+    tabButtons.forEach(btn => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
+
+    // ---------- Auth UI ----------
+    const authStatus = document.getElementById('authStatus');
+    const btnSignIn = document.getElementById('btnSignIn');
+    const btnSignOut = document.getElementById('btnSignOut');
+
+    function refreshAuthStatus() {
+      try {
+        const signedIn = puter?.auth?.isSignedIn?.() ?? false;
+        authStatus.textContent = `Auth: ${signedIn ? 'Signed in' : 'Not signed in'}`;
+      } catch {
+        authStatus.textContent = 'Auth: (Puter not ready)';
+      }
+    }
+
+    btnSignIn.addEventListener('click', async () => {
+      try {
+        await puter.auth.signIn({ attempt_temp_user_creation: true });
+      } catch (e) {
+        alert('Sign-in failed: ' + (e?.message || e));
+      } finally {
+        refreshAuthStatus();
+      }
+    });
+
+    btnSignOut.addEventListener('click', () => {
+      try { puter.auth.signOut(); } catch {}
+      refreshAuthStatus();
+    });
+
+    // Puter loads asynchronously; poll a bit
+    const readyTimer = setInterval(() => {
+      if (window.puter && puter.ai && puter.auth) {
+        clearInterval(readyTimer);
+        refreshAuthStatus();
+      }
+    }, 200);
+
+    // ---------- Helpers ----------
+    const $ = (id) => document.getElementById(id);
+
+    function appendMsg(role, text) {
+      const el = document.createElement('div');
+      el.className = `msg ${role === 'user' ? 'user' : 'ai'}`;
+      el.innerHTML = `<div class="role">${role === 'user' ? 'You' : 'AI'}</div><div class="content"></div>`;
+      el.querySelector('.content').textContent = text;
+      $('chatLog').appendChild(el);
+      $('chatLog').scrollTop = $('chatLog').scrollHeight;
+      return el.querySelector('.content');
+    }
+
+    function setBusy(button, busy, labelBusy = 'Working…') {
+      button.disabled = !!busy;
+      button.textContent = busy ? labelBusy : button.dataset.label;
+    }
+
+    async function streamChatToElement(messages, options, targetEl, debugEl) {
+      debugEl.value = '';
+
+      // stream mode returns async iterable of chunks with `.text`
+      const stream = await puter.ai.chat(messages, false, { ...options, stream: true });
+
+      let full = '';
+      for await (const chunk of stream) {
+        if (!chunk) continue;
+        const t = chunk.text || '';
+        full += t;
+        targetEl.textContent = full;
+        debugEl.value = JSON.stringify({ lastChunk: chunk }, null, 2);
+      }
+      return full;
+    }
+
+    // ---------- Chat ----------
+    const chatSend = $('chatSend');
+    const chatClear = $('chatClear');
+    const chatInput = $('chatInput');
+    const chatDebug = $('chatDebug');
+
+    chatSend.dataset.label = 'Send';
+    chatClear.dataset.label = 'Clear';
+
+    let chatHistory = [
+      { role: 'system', content: 'You are a helpful assistant.' }
+    ];
+
+    async function sendChat() {
+      const text = chatInput.value.trim();
+      if (!text) return;
+
+      chatInput.value = '';
+      appendMsg('user', text);
+      chatHistory.push({ role: 'user', content: text });
+
+      const aiTarget = appendMsg('ai', '');
+      setBusy(chatSend, true, 'Sending…');
+
+      try {
+        const model = $('chatModel').value.trim() || 'gpt-5-nano';
+        const temperature = Number($('chatTemp').value);
+        const text_verbosity = $('chatVerbosity').value;
+
+        const full = await streamChatToElement(
+          chatHistory,
+          { model, temperature, text_verbosity },
+          aiTarget,
+          chatDebug
+        );
+
+        chatHistory.push({ role: 'assistant', content: full });
+      } catch (e) {
+        aiTarget.textContent = 'Error: ' + (e?.message || e);
+        chatDebug.value = String(e?.stack || e);
+      } finally {
+        setBusy(chatSend, false);
+        refreshAuthStatus();
+      }
+    }
+
+    chatSend.addEventListener('click', sendChat);
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendChat();
+    });
+    chatClear.addEventListener('click', () => {
+      $('chatLog').innerHTML = '';
+      chatDebug.value = '';
+      chatHistory = [{ role: 'system', content: 'You are a helpful assistant.' }];
+    });
+
+    // ---------- Summarizer ----------
+    const sumRun = $('sumRun');
+    const sumClear = $('sumClear');
+    sumRun.dataset.label = 'Summarize';
+    sumClear.dataset.label = 'Clear';
+
+    function buildSummaryPrompt(style, length, inputText) {
+      const styleMap = {
+        bullet: 'Return 6–10 bullet points with the most important ideas.',
+        tldr: 'Start with a 1–2 sentence TL;DR, then 5–8 key bullet points.',
+        action: 'List clear action items, owners (if implied), and deadlines (if mentioned).',
+        outline: 'Create a structured outline with headings and sub-bullets.',
+      };
+      const lenMap = {
+        short: 'Keep it short.',
+        medium: 'Moderate detail.',
+        long: 'More detail, but still condensed.',
+      };
+
+      return [
+        'You are a summarizer.',
+        styleMap[style] || styleMap.tldr,
+        lenMap[length] || lenMap.medium,
+        '',
+        'Text to summarize:',
+        inputText
+      ].join('\n');
+    }
+
+    sumRun.addEventListener('click', async () => {
+      const input = $('sumInput').value.trim();
+      if (!input) return alert('Paste some text to summarize first.');
+
+      const style = $('sumStyle').value;
+      const length = $('sumLength').value;
+      const model = $('sumModel').value.trim() || 'gpt-5-nano';
+
+      $('sumOut').value = '';
+      setBusy(sumRun, true, 'Summarizing…');
+
+      try {
+        const prompt = buildSummaryPrompt(style, length, input);
+
+        // stream into textarea
+        const stream = await puter.ai.chat(prompt, false, { model, stream: true, text_verbosity: length });
+        let full = '';
+        for await (const chunk of stream) {
+          full += (chunk?.text || '');
+          $('sumOut').value = full;
+        }
+      } catch (e) {
+        $('sumOut').value = 'Error: ' + (e?.message || e);
+      } finally {
+        setBusy(sumRun, false);
+        refreshAuthStatus();
+      }
+    });
+
+    sumClear.addEventListener('click', () => {
+      $('sumInput').value = '';
+      $('sumOut').value = '';
+    });
+
+    // ---------- OCR ----------
+    const ocrFile = $('ocrFile');
+    const ocrPreview = $('ocrPreview');
+    const ocrRun = $('ocrRun');
+    const ocrClear = $('ocrClear');
+    ocrRun.dataset.label = 'Extract Text';
+    ocrClear.dataset.label = 'Clear';
+
+    let selectedFile = null;
+
+    ocrFile.addEventListener('change', () => {
+      selectedFile = ocrFile.files?.[0] || null;
+      $('ocrOut').value = '';
+
+      if (!selectedFile) {
+        ocrPreview.textContent = 'No image selected';
+        return;
+      }
+
+      const url = URL.createObjectURL(selectedFile);
+      ocrPreview.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = url;
+      img.onload = () => URL.revokeObjectURL(url);
+      ocrPreview.appendChild(img);
+    });
+
+    ocrRun.addEventListener('click', async () => {
+      if (!selectedFile) return alert('Pick an image first.');
+
+      $('ocrOut').value = '';
+      setBusy(ocrRun, true, 'Reading…');
+
+      try {
+        // puter.ai.img2txt accepts File/Blob
+        const text = await puter.ai.img2txt(selectedFile);
+        $('ocrOut').value = text || '(No text detected.)';
+      } catch (e) {
+        $('ocrOut').value = 'Error: ' + (e?.message || e);
+      } finally {
+        setBusy(ocrRun, false);
+        refreshAuthStatus();
+      }
+    });
+
+    ocrClear.addEventListener('click', () => {
+      selectedFile = null;
+      ocrFile.value = '';
+      ocrPreview.textContent = 'No image selected';
+      $('ocrOut').value = '';
+    });
   </script>
 </body>
 </html>
-
