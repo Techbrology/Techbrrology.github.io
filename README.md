@@ -51,8 +51,36 @@
 
   <script>
     // ======= CONFIG =======
-    const OWNER = "YOUR_USER";
-    const REPO  = "YOUR_REPO";
+   
+     function detectRepoFromLocation() {
+  const host = window.location.hostname;
+  const path = window.location.pathname.split("/").filter(Boolean);
+
+  // USERNAME.github.io
+  if (host.endsWith(".github.io")) {
+    const owner = host.replace(".github.io", "");
+
+    // https://username.github.io/repo/
+    if (path.length > 0) {
+      return { owner, repo: path[0] };
+    }
+
+    // https://username.github.io/ (user page)
+    return { owner, repo: null };
+  }
+
+  return { owner: null, repo: null };
+}
+
+const detected = detectRepoFromLocation();
+
+if (!detected.owner || !detected.repo) {
+  throw new Error("Could not auto-detect GitHub repo from URL.");
+}
+
+const OWNER = detected.owner;
+const REPO  = detected.repo;
+
 
     // If your GitHub Pages is built from /docs or a subfolder, set BASE_PATH.
     // For normal Pages from root: ""  (example: https://user.github.io/repo)
